@@ -1,0 +1,109 @@
+---
+  title: "week3_R"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+  
+```{r}
+library(magick)
+library(keras)
+
+coinFiles <- list.files("classification")
+coinValues <- unlist(lapply(coinFiles, function (f) as.integer(unlist(strsplit(f,"_"))[1]))) 
+head(coinFiles)
+unique(coinValues)
+```
+
+```{r}
+loadImg <- function(path) {
+  coin <- image_read(paste0('classification/', path))
+  coinResized <- image_resize(coin, "160x120")
+  
+  # Extract the raw bitmap matrix with pixel values with `image_data`.
+  pix <- image_data(coinResized)
+  
+  # Convert it to an array.
+  pix_arr <- as.integer(pix)
+  
+  # Flatten the array into a single dimension.
+  array_reshape(pix_arr, 57600)
+}
+
+coinList <- lapply(coinFiles, loadImg)
+coins <- array(unlist(coinList), dim=c(3059, 57600))
+dim(coins)
+```
+
+```{r}
+nTrain <- floor(0.90 * nrow(coins))
+rowNums <- 1:nrow(coins)
+trainIndexes <- sample(rowNums, nTrain)
+testIndexes <- setdiff(rowNums, trainIndexes)
+
+X_train <- coins[trainIndexes,]
+X_test <- coins[testIndexes,]
+
+Y_train <- coinValues[trainIndexes]
+Y_test <- coinValues[testIndexes]
+
+X_train_cen <- scale(X_train, scale=FALSE)
+tr_means <- colMeans(X_train)
+X_test_cen <- sweep(X_test,2,tr_means,FUN="-")
+
+y_map <- list("5"=0, "10"=1, "25"=2, "50"=3, "100"=4)
+Y_train_mapped <- unlist(lapply(Y_train, function(y) y_map[[as.character(y)]]))
+Y_train_cat <- to_categorical(Y_train_mapped)
+```
+
+```{r}
+head(Y_train_mapped)
+head(Y_train_cat)
+```
+
+```{r}
+reg <- regularizer_l2(l = 0.01)
+model <- keras_model_sequential() 
+model %>% 
+  layer_dense(units = 64 , activation = 'relu', kernel_initializer='random_normal', kernel_regularizer=reg, input_shape = c(57600)) %>% 
+  layer_dense(units = 128, activation = 'relu', kernel_initializer='random_normal', kernel_regularizer=reg) %>%
+  layer_dense(units = 32 , activation = 'relu', kernel_initializer='random_normal', kernel_regularizer=reg) %>%
+  layer_dense(units = 64 , activation = 'relu', kernel_initializer='random_normal', kernel_regularizer=reg) %>%
+  layer_dense(units = 5, activation = 'softmax')
+```
+
+```{r}
+sgd <- optimizer_sgd(lr = 0.001)
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = sgd,
+  metrics = c('accuracy')
+)
+```
+
+```{r}
+X_train_cen_keras <- keras_array(X_train_cen)
+Y_train_cat_keras <- keras_array(Y_train_cat)
+```
+
+```{r}
+history <- model %>% fit(
+  X_train_cen_keras, Y_train_cat_keras, 
+  epochs = 50, batch_size = 64, 
+  validation_split = 0.2
+)
+```
+
+```{r}
+plot(history)
+```
+
+```{r}
+Y_test_mapped <- unlist(lapply(Y_test, function(y) y_map[[as.character(y)]]))
+Y_test_cat <- to_categorical(Y_test_mapped)
+Y_test_cat_keras <- keras_array(Y_test_cat)
+
+model %>% evaluate(X_test_cen, Y_test_cat_keras)
+```
+
+
