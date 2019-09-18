@@ -1,2 +1,2 @@
 # FinalProjectCS4315
-Sentiment Analysis
+Sentiment and Text analysis in R and Python. 
